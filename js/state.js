@@ -6,7 +6,10 @@ export const state = {
   renderer: null,
   parts: [],
   selectedPart: null,
+  selectedParts: [],
   partCounter: 0,
+  groups: [],
+  groupCounter: 0,
   currentMode: 'select',
   isDragging: false,
   dragPlane: new THREE.Plane(),
@@ -15,6 +18,7 @@ export const state = {
   raycaster: new THREE.Raycaster(),
   transformStartPos: new THREE.Vector3(),
   partSnapEnabled: true,
+  showOverallDimensions: true,
   dimensionGroup: null,
   orbitState: {
     rotating: false,
@@ -28,6 +32,9 @@ export const state = {
   },
 };
 
+export const keysPressed = {};
+
 export const GRID_SNAP = 10;
 export const SNAP_THRESHOLD = 50;
 export const COLLISION_MARGIN = 2;
+export const MAX_GROUPS = 10;

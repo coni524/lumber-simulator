@@ -96,6 +96,42 @@ export function showDimensions(part) {
   state.scene.add(state.dimensionGroup);
 }
 
+export function showOverallDimensions() {
+  removeDimensions();
+  if (state.parts.length === 0) return;
+  if (!state.showOverallDimensions) return;
+
+  const box = new THREE.Box3();
+  for (const part of state.parts) {
+    box.expandByObject(part.mesh);
+  }
+  const min = box.min;
+  const max = box.max;
+
+  state.dimensionGroup = new THREE.Group();
+  state.dimensionGroup.name = 'dimensions';
+
+  // Width (X) - blue
+  const xStart = new THREE.Vector3(min.x, min.y, max.z);
+  const xEnd = new THREE.Vector3(max.x, min.y, max.z);
+  const xLen = Math.round(max.x - min.x);
+  state.dimensionGroup.add(createDimensionLine(xStart, xEnd, 0x2196F3, `${xLen}mm`, new THREE.Vector3(0, 0, 1)));
+
+  // Height (Y) - red
+  const yStart = new THREE.Vector3(max.x, min.y, max.z);
+  const yEnd = new THREE.Vector3(max.x, max.y, max.z);
+  const yLen = Math.round(max.y - min.y);
+  state.dimensionGroup.add(createDimensionLine(yStart, yEnd, 0xF44336, `${yLen}mm`, new THREE.Vector3(1, 0, 1).normalize()));
+
+  // Depth (Z) - blue
+  const zStart = new THREE.Vector3(max.x, min.y, min.z);
+  const zEnd = new THREE.Vector3(max.x, min.y, max.z);
+  const zLen = Math.round(max.z - min.z);
+  state.dimensionGroup.add(createDimensionLine(zStart, zEnd, 0x2196F3, `${zLen}mm`, new THREE.Vector3(1, 0, 0)));
+
+  state.scene.add(state.dimensionGroup);
+}
+
 export function removeDimensions() {
   if (state.dimensionGroup) {
     state.scene.remove(state.dimensionGroup);

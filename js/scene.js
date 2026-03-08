@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { state } from './state.js';
+import { state, keysPressed } from './state.js';
 import { createFloorTexture } from './textures.js';
 
 export function initThree() {
@@ -89,7 +89,7 @@ export function initOrbitControls() {
         return;
       }
     }
-    // Raycast for selection on left click
+    // Raycast for selection on left click (+ drag to move)
     if (e.button === 0 && state.currentMode === 'select') {
       updateMouse(e);
       state.raycaster.setFromCamera(state.mouse, state.camera);
@@ -97,10 +97,72 @@ export function initOrbitControls() {
       const hits = state.raycaster.intersectObjects(meshes);
       if (hits.length > 0) {
         const part = state.parts.find(p => p.mesh === hits[0].object);
-        if (part) { selectPartFn(part); }
+        if (part) {
+          if (e.shiftKey) {
+            // Shift+click on part: defer multi-select vs pan
+            state._pendingMultiSelect = { part, hit: hits[0], startX: e.clientX, startY: e.clientY };
+          } else {
+            selectPartFn(part);
+            state._selectDragMode = 'move';
+            startDrag(e, hits[0]);
+          }
+        }
         return;
       } else {
-        selectPartFn(null);
+        if (!e.shiftKey) selectPartFn(null);
+      }
+    }
+
+    // Right-click on a part: face-axis rotation (group-aware)
+    if (e.button === 2) {
+      updateMouse(e);
+      state.raycaster.setFromCamera(state.mouse, state.camera);
+      const meshes = state.parts.map(p => p.mesh);
+      const hits = state.raycaster.intersectObjects(meshes);
+      if (hits.length > 0) {
+        const part = state.parts.find(p => p.mesh === hits[0].object);
+        if (part) {
+          selectPartFn(part);
+          state._selectDragMode = 'faceRotate';
+          // Map face normal to rotation axis:
+          //   end face (X normal) → Z rotation
+          //   top/bottom face (Y normal) → X rotation
+          //   side face (Z normal) → Y rotation
+          const localNormal = hits[0].face.normal;
+          const localRotAxis = new THREE.Vector3(localNormal.y, localNormal.z, localNormal.x);
+          state._faceRotateNormal = localRotAxis.clone()
+            .applyQuaternion(hits[0].object.quaternion).normalize();
+          state._faceRotateStartRot = part.mesh.quaternion.clone();
+
+          // Compute screen-space center of the object for arc-based rotation
+          const rect = canvas.getBoundingClientRect();
+          const center3D = part.mesh.position.clone().project(state.camera);
+          state._faceRotateCenterX = (center3D.x * 0.5 + 0.5) * rect.width + rect.left;
+          state._faceRotateCenterY = (-center3D.y * 0.5 + 0.5) * rect.height + rect.top;
+          // Initial angle from object center to click point
+          state._faceRotateStartAngle = Math.atan2(
+            e.clientY - state._faceRotateCenterY,
+            e.clientX - state._faceRotateCenterX
+          );
+
+          // Check if face normal points towards or away from camera to set rotation sign
+          const camDir = state.camera.getWorldDirection(new THREE.Vector3());
+          state._faceRotateSign = (state._faceRotateNormal.dot(camDir) > 0) ? 1 : -1;
+          // Invert for X rotation (top/bottom face drag)
+          if (Math.abs(localNormal.y) > 0.5) state._faceRotateSign *= -1;
+
+          // Save start state for all selected parts (group rotation)
+          const pivot = part.mesh.position.clone();
+          state._faceRotateParts = state.selectedParts
+            .filter(p => p !== part)
+            .map(p => ({
+              part: p,
+              startQuat: p.mesh.quaternion.clone(),
+              offsetFromPivot: p.mesh.position.clone().sub(pivot),
+            }));
+          state.isDragging = true;
+        }
+        return;
       }
     }
 
@@ -117,6 +179,24 @@ export function initOrbitControls() {
   });
 
   canvas.addEventListener('mousemove', (e) => {
+    if (state._pendingMultiSelect) {
+      const dx = e.clientX - state._pendingMultiSelect.startX;
+      const dy = e.clientY - state._pendingMultiSelect.startY;
+      if (Math.sqrt(dx * dx + dy * dy) > 5) {
+        // Moved too far — cancel multi-select, start drag move
+        const pending = state._pendingMultiSelect;
+        state._pendingMultiSelect = null;
+        // If part is already selected, start group drag; otherwise select first
+        if (!state.selectedParts.includes(pending.part)) {
+          selectPartFn(pending.part);
+        } else {
+          state.selectedPart = pending.part;
+        }
+        state._selectDragMode = 'move';
+        startDrag(e, pending.hit);
+      }
+      return;
+    }
     if (state.isDragging) { onDragFn(e); return; }
     const dx = e.clientX - state.orbitState.lastX;
     const dy = e.clientY - state.orbitState.lastY;
@@ -140,6 +220,11 @@ export function initOrbitControls() {
   });
 
   canvas.addEventListener('mouseup', () => {
+    if (state._pendingMultiSelect) {
+      togglePartSelectionFn(state._pendingMultiSelect.part);
+      state._pendingMultiSelect = null;
+      return;
+    }
     state.orbitState.rotating = false;
     state.orbitState.panning = false;
     if (state.isDragging) endDragFn();
@@ -173,15 +258,39 @@ export function updateCameraFromOrbit() {
   state.camera.lookAt(state.orbitState.target);
 }
 
+const MOVE_SPEED = 15;
+
+export function updateCameraMovement() {
+  let moved = false;
+  // Forward direction projected onto XZ plane
+  const forward = new THREE.Vector3(
+    Math.sin(state.orbitState.theta),
+    0,
+    Math.cos(state.orbitState.theta)
+  ).normalize();
+  const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0, 1, 0)).normalize();
+
+  if (keysPressed['w']) { state.orbitState.target.add(forward.clone().multiplyScalar(-MOVE_SPEED)); moved = true; }
+  if (keysPressed['s']) { state.orbitState.target.add(forward.clone().multiplyScalar(MOVE_SPEED)); moved = true; }
+  if (keysPressed['a']) { state.orbitState.target.add(right.clone().multiplyScalar(MOVE_SPEED)); moved = true; }
+  if (keysPressed['d']) { state.orbitState.target.add(right.clone().multiplyScalar(-MOVE_SPEED)); moved = true; }
+  if (keysPressed[' '] && !keysPressed['shift']) { state.orbitState.target.y += MOVE_SPEED; moved = true; }
+  if (keysPressed[' '] && keysPressed['shift']) { state.orbitState.target.y = Math.max(0, state.orbitState.target.y - MOVE_SPEED); moved = true; }
+
+  if (moved) updateCameraFromOrbit();
+}
+
 // These will be set by interaction.js to avoid circular dependencies
 let selectPartFn = () => {};
+let togglePartSelectionFn = () => {};
 let startDrag = () => {};
 let onDragFn = () => {};
 let endDragFn = () => {};
 let updateMouse = () => {};
 
-export function setSceneCallbacks({ selectPart, startDragCb, onDrag, endDrag, updateMouseCb }) {
+export function setSceneCallbacks({ selectPart, togglePartSelection, startDragCb, onDrag, endDrag, updateMouseCb }) {
   selectPartFn = selectPart;
+  togglePartSelectionFn = togglePartSelection;
   startDrag = startDragCb;
   onDragFn = onDrag;
   endDragFn = endDrag;

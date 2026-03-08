@@ -1,12 +1,13 @@
 import * as THREE from 'three';
-import { state } from './state.js';
+import { state, keysPressed } from './state.js';
 import { LUMBER_CATALOG } from './lumber.js';
 import {
   createPart, selectPart, rebuildMesh, checkCollision,
-  updatePropertiesPanel, updatePartsList, updateStatusBar
+  updatePropertiesPanel, updatePartsList, updateStatusBar,
+  createGroupFromSelection, ungroupSelected
 } from './parts.js';
-import { showDimensions } from './dimensions.js';
-import { deleteSelected, duplicateSelected } from './interaction.js';
+import { showDimensions, showOverallDimensions, removeDimensions } from './dimensions.js';
+import { deleteSelected, duplicateSelected, copySelected, pasteSelected } from './interaction.js';
 
 export function buildCatalog() {
   const list = document.getElementById('catalog-list');
@@ -110,15 +111,47 @@ export function initToolbar() {
     state.partSnapEnabled = !state.partSnapEnabled;
     this.classList.toggle('active', state.partSnapEnabled);
   });
+
+  // Overall dimensions toggle
+  document.getElementById('dims-toggle').addEventListener('click', function() {
+    state.showOverallDimensions = !state.showOverallDimensions;
+    this.classList.toggle('active', state.showOverallDimensions);
+    if (!state.selectedPart) {
+      if (state.showOverallDimensions) {
+        showOverallDimensions();
+      } else {
+        removeDimensions();
+      }
+    }
+  });
 }
 
 export function initKeyboard() {
   document.addEventListener('keydown', (e) => {
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
-    if (e.key === 'v' || e.key === 'V') { document.querySelector('[data-mode="select"]').click(); }
-    if (e.key === 'g' || e.key === 'G') { document.querySelector('[data-mode="move"]').click(); }
-    if (e.key === 'r' || e.key === 'R') { document.querySelector('[data-mode="rotate"]').click(); }
+    keysPressed[e.key.toLowerCase()] = true;
+    if (e.key === ' ') e.preventDefault();
+    // Group shortcuts (must be before bare g/G check)
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (e.key === 'g' || e.key === 'G')) { e.preventDefault(); createGroupFromSelection(); return; }
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'g' || e.key === 'G')) { e.preventDefault(); ungroupSelected(); return; }
+    if (!e.ctrlKey && !e.metaKey && (e.key === 'v' || e.key === 'V')) { document.querySelector('[data-mode="select"]').click(); }
+    if (!e.ctrlKey && !e.metaKey && (e.key === 'g' || e.key === 'G')) { document.querySelector('[data-mode="move"]').click(); }
+    if (!e.ctrlKey && !e.metaKey && (e.key === 'r' || e.key === 'R')) { document.querySelector('[data-mode="rotate"]').click(); }
     if (e.key === 'Delete' || e.key === 'Backspace') { deleteSelected(); }
     if ((e.ctrlKey || e.metaKey) && (e.key === 'd' || e.key === 'D')) { e.preventDefault(); duplicateSelected(); }
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'C')) { e.preventDefault(); copySelected(); }
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'v' || e.key === 'V')) { e.preventDefault(); pasteSelected(); }
   });
+  document.addEventListener('keyup', (e) => {
+    keysPressed[e.key.toLowerCase()] = false;
+  });
+  // Clear keys on window blur to prevent stuck keys
+  window.addEventListener('blur', () => {
+    for (const key in keysPressed) keysPressed[key] = false;
+  });
+}
+
+export function bindGroupButtons() {
+  document.getElementById('btn-group').addEventListener('click', () => createGroupFromSelection());
+  document.getElementById('btn-ungroup').addEventListener('click', () => ungroupSelected());
 }

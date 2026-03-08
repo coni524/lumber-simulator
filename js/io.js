@@ -1,21 +1,27 @@
 import { state } from './state.js';
-import { createPart, updatePropertiesPanel, updatePartsList, updateStatusBar } from './parts.js';
+import { createPart, updatePropertiesPanel, updatePartsList, updateStatusBar, updateGroupsList } from './parts.js';
 import { removeDimensions } from './dimensions.js';
 import { updateCameraFromOrbit } from './scene.js';
 
 function exportProject() {
   return JSON.stringify({
-    version: 1,
+    version: 2,
     name: 'Lumber Project',
     created: new Date().toISOString(),
     parts: state.parts.map(p => ({
+      id: p.id,
       name: p.name,
       lumberId: p.lumberId,
       length: p.length,
       color: p.color,
       position: { x: p.x, y: p.y, z: p.z },
       rotation: { x: p.rx, y: p.ry, z: p.rz },
-    }))
+    })),
+    groups: state.groups.map(g => ({
+      id: g.id,
+      name: g.name,
+      partIds: [...g.partIds],
+    })),
   }, null, 2);
 }
 
@@ -27,15 +33,23 @@ function importProject(json) {
   for (const p of state.parts) {
     state.scene.remove(p.mesh);
     p.mesh.geometry.dispose();
-    p.mesh.material.dispose();
+    if (Array.isArray(p.mesh.material)) {
+      p.mesh.material.forEach(m => m.dispose());
+    } else {
+      p.mesh.material.dispose();
+    }
   }
   state.parts = [];
   state.selectedPart = null;
+  state.selectedParts = [];
   state.partCounter = 0;
+  state.groups = [];
+  state.groupCounter = 0;
 
+  const idMap = {};
   if (data.parts) {
     for (const pd of data.parts) {
-      createPart(pd.lumberId, {
+      const part = createPart(pd.lumberId, {
         name: pd.name,
         length: pd.length,
         color: pd.color,
@@ -46,10 +60,32 @@ function importProject(json) {
         ry: pd.rotation?.y || 0,
         rz: pd.rotation?.z || 0,
       });
+      if (part && pd.id !== undefined) {
+        idMap[pd.id] = part.id;
+      }
     }
   }
+
+  // Restore groups with remapped IDs
+  if (data.groups) {
+    for (const gd of data.groups) {
+      state.groupCounter++;
+      const remappedIds = gd.partIds
+        .map(oldId => idMap[oldId])
+        .filter(id => id !== undefined);
+      if (remappedIds.length > 0) {
+        state.groups.push({
+          id: state.groupCounter,
+          name: gd.name || `グループ #${state.groupCounter}`,
+          partIds: remappedIds,
+        });
+      }
+    }
+  }
+
   updatePropertiesPanel();
   updatePartsList();
+  updateGroupsList();
   updateStatusBar();
 }
 

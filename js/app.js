@@ -1,7 +1,8 @@
 import { state } from './state.js';
-import { initThree, initOrbitControls } from './scene.js';
-import { buildCatalog, buildTypeSelect, bindPropertyInputs, initToolbar, initKeyboard } from './ui.js';
+import { initThree, initOrbitControls, updateCameraMovement } from './scene.js';
+import { buildCatalog, buildTypeSelect, bindPropertyInputs, initToolbar, initKeyboard, bindGroupButtons } from './ui.js';
 import { initInteraction } from './interaction.js';
+import { updateGroundFaces } from './parts.js';
 import { initIO } from './io.js';
 
 // Initialize
@@ -13,11 +14,14 @@ buildTypeSelect();
 bindPropertyInputs();
 initToolbar();
 initKeyboard();
+bindGroupButtons();
 initIO();
 
 // Animation loop
 function animate() {
   requestAnimationFrame(animate);
+  updateCameraMovement();
+  updateGroundFaces();
   state.renderer.render(state.scene, state.camera);
 }
 animate();

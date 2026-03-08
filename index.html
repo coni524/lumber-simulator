@@ -26,11 +26,14 @@
       <button class="tb-btn" onclick="showImport()" title="インポート">📂 開く</button>
       <button class="tb-btn" onclick="resetCamera()" title="カメラリセット">🎥</button>
       <button class="tb-btn active" id="snap-toggle" title="スナップ切替">🧲 スナップ</button>
+      <button class="tb-btn active" id="dims-toggle" title="全体寸法の表示切替">📏 寸法</button>
     </div>
     <div id="status-bar">
       <span id="sb-mode">モード: 選択</span>
       <span id="sb-count">パーツ: 0</span>
-      <span id="sb-hint">左カタログから木材を追加 | マウスドラッグ: カメラ回転</span>
+      <span id="sb-hint">
+        左クリック: 選択 | Shift+クリック: 複数選択 | ドラッグ: 移動 | Shift+ドラッグ: 上下移動 | 右ドラッグ: 面回転 | 中/右ボタン空白: カメラパン | 左ドラッグ空白: カメラ回転 | ホイール: ズーム | WASD: カメラ移動 | Space/Shift+Space: カメラ上下 | V: 選択 | G: 移動 | R: 回転 | Del: 削除 | Ctrl+C/V: コピペ | Ctrl+D: 複製 | Ctrl+G: グループ化 | Ctrl+Shift+G: グループ解除
+      </span>
     </div>
   </div>
 
@@ -39,6 +42,17 @@
     <h2>プロパティ</h2>
     <div id="prop-content">
       <div id="no-selection">木材を選択してください</div>
+      <div id="multi-selection" style="display:none">
+        <p id="multi-count">0 パーツ選択中</p>
+        <div class="btn-row">
+          <button class="btn" id="btn-group">グループ化</button>
+          <button class="btn" id="btn-ungroup">グループ解除</button>
+        </div>
+        <div class="btn-row">
+          <button class="btn" onclick="duplicateSelected()">複製</button>
+          <button class="btn btn-danger" onclick="deleteSelected()">削除</button>
+        </div>
+      </div>
       <div id="prop-editor" style="display:none">
         <div class="prop-group">
           <label>名前</label>
@@ -73,6 +87,10 @@
           <button class="btn btn-danger" onclick="deleteSelected()">削除</button>
         </div>
       </div>
+    </div>
+    <div id="groups-panel">
+      <h3>グループ一覧 <span id="group-count" style="font-weight:normal">0/10</span></h3>
+      <div id="groups-list"></div>
     </div>
     <div id="parts-panel">
       <h3>パーツ一覧</h3>
