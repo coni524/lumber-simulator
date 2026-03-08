@@ -68,6 +68,11 @@ export function onDrag(e) {
   if (!state.selectedPart) return;
   updateMouse(e);
   if (state.currentMode === 'move' || state._selectDragMode === 'move') {
+    // Dynamically switch vertical drag mode when Shift is pressed/released mid-drag
+    if (e.shiftKey !== state._verticalDrag) {
+      state._verticalDrag = e.shiftKey;
+      setupMoveDrag(e, e.shiftKey);
+    }
     state.raycaster.setFromCamera(state.mouse, state.camera);
     const pt = new THREE.Vector3();
     if (state.raycaster.ray.intersectPlane(state.dragPlane, pt)) {
@@ -79,8 +84,22 @@ export function onDrag(e) {
       }
       // Snap to grid
       pt.x = Math.round(pt.x / GRID_SNAP) * GRID_SNAP;
-      pt.y = Math.max(0, Math.round(pt.y / GRID_SNAP) * GRID_SNAP);
+      pt.y = Math.round(pt.y / GRID_SNAP) * GRID_SNAP;
       pt.z = Math.round(pt.z / GRID_SNAP) * GRID_SNAP;
+      // Clamp so the object's bottom (lowest corner) doesn't go below Y=0
+      const part = state.selectedPart;
+      const hx = part.length / 2, hy = part.height / 2, hz = part.width / 2;
+      const quat = part.mesh.quaternion;
+      let bottomOffset = 0;
+      for (const sx of [-1, 1]) {
+        for (const sy of [-1, 1]) {
+          for (const sz of [-1, 1]) {
+            const cy = new THREE.Vector3(sx * hx, sy * hy, sz * hz).applyQuaternion(quat).y;
+            if (cy < bottomOffset) bottomOffset = cy;
+          }
+        }
+      }
+      pt.y = Math.max(-bottomOffset, pt.y);
 
       // Build exclude list for multi-part drag
       const otherParts = (state._dragPartOffsets || []).map(o => o.part);

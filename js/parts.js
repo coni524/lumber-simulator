@@ -44,20 +44,20 @@ function createFaceMaterials(color, woodTex, lengthRepeat) {
 }
 
 export function updateGroundFaces() {
-  const groundY = 1; // threshold for ground contact
+  const threshold = 1; // tolerance in mm
   for (const part of state.parts) {
     const mesh = part.mesh;
     if (!Array.isArray(mesh.material)) continue;
 
-    // Get the 6 face normals in world space
     const quat = mesh.quaternion;
-    const faceNormals = [
-      new THREE.Vector3(1, 0, 0),  // +X
-      new THREE.Vector3(-1, 0, 0), // -X
-      new THREE.Vector3(0, 1, 0),  // +Y
-      new THREE.Vector3(0, -1, 0), // -Y
-      new THREE.Vector3(0, 0, 1),  // +Z
-      new THREE.Vector3(0, 0, -1), // -Z
+    // BoxGeometry face order: +X, -X, +Y, -Y, +Z, -Z
+    const faceLocalNormals = [
+      new THREE.Vector3(1, 0, 0),
+      new THREE.Vector3(-1, 0, 0),
+      new THREE.Vector3(0, 1, 0),
+      new THREE.Vector3(0, -1, 0),
+      new THREE.Vector3(0, 0, 1),
+      new THREE.Vector3(0, 0, -1),
     ];
     const halfSizes = [
       part.length / 2, part.length / 2,
@@ -65,14 +65,28 @@ export function updateGroundFaces() {
       part.width / 2, part.width / 2,
     ];
 
+    // Compute the object's lowest Y from all 8 corners of the bounding box
+    const hx = part.length / 2, hy = part.height / 2, hz = part.width / 2;
+    let minY = Infinity;
+    for (const sx of [-1, 1]) {
+      for (const sy of [-1, 1]) {
+        for (const sz of [-1, 1]) {
+          const corner = new THREE.Vector3(sx * hx, sy * hy, sz * hz).applyQuaternion(quat);
+          const worldY = mesh.position.y + corner.y;
+          if (worldY < minY) minY = worldY;
+        }
+      }
+    }
+    // Object is grounded only when its lowest point is at Y=0
+    const isObjectGrounded = Math.abs(minY) < threshold;
+
     const baseMat = mesh.material.find(m => m !== GROUND_MATERIAL) || mesh.material[0];
 
     for (let i = 0; i < 6; i++) {
-      const worldNormal = faceNormals[i].clone().applyQuaternion(quat);
-      // Face center Y in world space
+      const worldNormal = faceLocalNormals[i].clone().applyQuaternion(quat);
       const faceCenterY = mesh.position.y + worldNormal.y * halfSizes[i];
-      // Face is grounded if it points downward and its center is near Y=0
-      const isGrounded = worldNormal.y < -0.5 && faceCenterY < groundY;
+      // Face is grounded: object bottom at Y=0 AND this face points down AND face is near Y=0
+      const isGrounded = isObjectGrounded && worldNormal.y < -0.5 && faceCenterY < threshold;
       mesh.material[i] = isGrounded ? GROUND_MATERIAL : baseMat;
     }
   }
