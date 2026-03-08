@@ -1,0 +1,904 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lumber 3D Simulator</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a2e; color: #e0e0e0; overflow: hidden; height: 100vh; }
+
+#app { display: flex; height: 100vh; }
+
+/* Left Panel - Catalog */
+#catalog {
+  width: 220px; min-width: 220px; background: #16213e; border-right: 1px solid #0f3460;
+  display: flex; flex-direction: column; overflow: hidden;
+}
+#catalog h2 { padding: 12px 16px; font-size: 14px; background: #0f3460; color: #e94560; letter-spacing: 1px; }
+#catalog-list { flex: 1; overflow-y: auto; padding: 8px; }
+.catalog-item {
+  padding: 10px 12px; margin-bottom: 4px; background: #1a1a2e; border: 1px solid #0f3460;
+  border-radius: 6px; cursor: pointer; transition: all 0.2s; font-size: 13px;
+}
+.catalog-item:hover { background: #0f3460; border-color: #e94560; }
+.catalog-item .name { font-weight: 600; color: #fff; }
+.catalog-item .dims { font-size: 11px; color: #888; margin-top: 2px; }
+.catalog-section { padding: 8px 4px 4px; font-size: 11px; color: #e94560; font-weight: 600; text-transform: uppercase; }
+
+/* Center - 3D Viewport */
+#viewport { flex: 1; position: relative; }
+#three-canvas { width: 100%; height: 100%; display: block; }
+#toolbar {
+  position: absolute; top: 12px; left: 12px; display: flex; gap: 6px; z-index: 10;
+}
+.tb-btn {
+  padding: 6px 14px; background: rgba(15,52,96,0.9); border: 1px solid #0f3460;
+  color: #e0e0e0; border-radius: 4px; cursor: pointer; font-size: 12px; transition: all 0.2s;
+}
+.tb-btn:hover { background: #e94560; color: #fff; }
+.tb-btn.active { background: #e94560; color: #fff; }
+#status-bar {
+  position: absolute; bottom: 0; left: 0; right: 0; padding: 6px 14px;
+  background: rgba(15,52,96,0.85); font-size: 11px; color: #888; display: flex; gap: 20px;
+}
+
+/* Right Panel - Properties */
+#properties {
+  width: 280px; min-width: 280px; background: #16213e; border-left: 1px solid #0f3460;
+  display: flex; flex-direction: column; overflow: hidden;
+}
+#properties h2 { padding: 12px 16px; font-size: 14px; background: #0f3460; color: #e94560; letter-spacing: 1px; }
+#prop-content { flex: 1; overflow-y: auto; padding: 12px; }
+.prop-group { margin-bottom: 16px; }
+.prop-group label { display: block; font-size: 11px; color: #888; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+.prop-row { display: flex; gap: 6px; margin-bottom: 6px; align-items: center; }
+.prop-row .axis { font-size: 11px; width: 14px; font-weight: 600; }
+.prop-row .axis.x { color: #e94560; }
+.prop-row .axis.y { color: #4ade80; }
+.prop-row .axis.z { color: #60a5fa; }
+.prop-row input[type="number"] {
+  flex: 1; background: #1a1a2e; border: 1px solid #0f3460; color: #fff; padding: 5px 8px;
+  border-radius: 4px; font-size: 12px; width: 60px;
+}
+.prop-row input[type="number"]:focus { border-color: #e94560; outline: none; }
+.prop-row input[type="text"], .prop-row select {
+  flex: 1; background: #1a1a2e; border: 1px solid #0f3460; color: #fff; padding: 5px 8px;
+  border-radius: 4px; font-size: 12px;
+}
+.prop-row input[type="color"] { width: 32px; height: 28px; border: 1px solid #0f3460; background: none; cursor: pointer; border-radius: 4px; }
+#no-selection { padding: 20px; text-align: center; color: #555; font-size: 13px; }
+.btn-row { display: flex; gap: 6px; margin-top: 8px; }
+.btn { padding: 6px 12px; border: 1px solid #0f3460; background: #1a1a2e; color: #e0e0e0; border-radius: 4px; cursor: pointer; font-size: 12px; transition: all 0.2s; }
+.btn:hover { background: #0f3460; }
+.btn-danger { border-color: #e94560; color: #e94560; }
+.btn-danger:hover { background: #e94560; color: #fff; }
+
+/* Parts List */
+#parts-panel { border-top: 1px solid #0f3460; max-height: 200px; overflow-y: auto; }
+#parts-panel h3 { padding: 8px 16px; font-size: 12px; color: #888; background: #0f3460; position: sticky; top: 0; }
+.part-item {
+  padding: 6px 12px; font-size: 12px; cursor: pointer; border-bottom: 1px solid #0f3460; display: flex; justify-content: space-between;
+}
+.part-item:hover { background: #1a1a2e; }
+.part-item.selected { background: #0f3460; border-left: 3px solid #e94560; }
+
+/* Modal */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center;
+  justify-content: center; z-index: 100;
+}
+.modal {
+  background: #16213e; border: 1px solid #0f3460; border-radius: 8px; padding: 20px;
+  max-width: 600px; width: 90%; max-height: 80vh; overflow-y: auto;
+}
+.modal h3 { margin-bottom: 12px; color: #e94560; }
+.modal textarea {
+  width: 100%; min-height: 200px; background: #1a1a2e; border: 1px solid #0f3460;
+  color: #e0e0e0; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 12px; resize: vertical;
+}
+.modal-btns { display: flex; gap: 8px; margin-top: 12px; justify-content: flex-end; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: #1a1a2e; }
+::-webkit-scrollbar-thumb { background: #0f3460; border-radius: 3px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <!-- Left: Catalog -->
+  <div id="catalog">
+    <h2>木材カタログ</h2>
+    <div id="catalog-list"></div>
+  </div>
+
+  <!-- Center: 3D Viewport -->
+  <div id="viewport">
+    <canvas id="three-canvas"></canvas>
+    <div id="toolbar">
+      <button class="tb-btn active" data-mode="select" title="選択 (V)">選択</button>
+      <button class="tb-btn" data-mode="move" title="移動 (G)">移動</button>
+      <button class="tb-btn" data-mode="rotate" title="回転 (R)">回転</button>
+      <button class="tb-btn" onclick="duplicateSelected()" title="複製 (Ctrl+D)">複製</button>
+      <button class="tb-btn" onclick="showExport()" title="エクスポート">💾 保存</button>
+      <button class="tb-btn" onclick="showImport()" title="インポート">📂 開く</button>
+      <button class="tb-btn" onclick="resetCamera()" title="カメラリセット">🎥</button>
+    </div>
+    <div id="status-bar">
+      <span id="sb-mode">モード: 選択</span>
+      <span id="sb-count">パーツ: 0</span>
+      <span id="sb-hint">左カタログから木材を追加 | マウスドラッグ: カメラ回転</span>
+    </div>
+  </div>
+
+  <!-- Right: Properties -->
+  <div id="properties">
+    <h2>プロパティ</h2>
+    <div id="prop-content">
+      <div id="no-selection">木材を選択してください</div>
+      <div id="prop-editor" style="display:none">
+        <div class="prop-group">
+          <label>名前</label>
+          <div class="prop-row"><input type="text" id="prop-name"></div>
+        </div>
+        <div class="prop-group">
+          <label>木材タイプ</label>
+          <div class="prop-row"><select id="prop-type"></select></div>
+        </div>
+        <div class="prop-group">
+          <label>長さ (mm)</label>
+          <div class="prop-row"><input type="number" id="prop-length" min="10" step="1"></div>
+        </div>
+        <div class="prop-group">
+          <label>位置 (mm)</label>
+          <div class="prop-row"><span class="axis x">X</span><input type="number" id="prop-px" step="1"></div>
+          <div class="prop-row"><span class="axis y">Y</span><input type="number" id="prop-py" step="1"></div>
+          <div class="prop-row"><span class="axis z">Z</span><input type="number" id="prop-pz" step="1"></div>
+        </div>
+        <div class="prop-group">
+          <label>回転 (°)</label>
+          <div class="prop-row"><span class="axis x">X</span><input type="number" id="prop-rx" step="15"></div>
+          <div class="prop-row"><span class="axis y">Y</span><input type="number" id="prop-ry" step="15"></div>
+          <div class="prop-row"><span class="axis z">Z</span><input type="number" id="prop-rz" step="15"></div>
+        </div>
+        <div class="prop-group">
+          <label>色</label>
+          <div class="prop-row"><input type="color" id="prop-color" value="#c4956a"></div>
+        </div>
+        <div class="btn-row">
+          <button class="btn" onclick="duplicateSelected()">複製</button>
+          <button class="btn btn-danger" onclick="deleteSelected()">削除</button>
+        </div>
+      </div>
+    </div>
+    <div id="parts-panel">
+      <h3>パーツ一覧</h3>
+      <div id="parts-list"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal for Export/Import -->
+<div id="modal-overlay" class="modal-overlay" style="display:none">
+  <div class="modal">
+    <h3 id="modal-title">エクスポート</h3>
+    <textarea id="modal-text"></textarea>
+    <div class="modal-btns">
+      <button class="btn" onclick="copyModalText()">コピー</button>
+      <button class="btn" onclick="closeModal()">閉じる</button>
+      <button class="btn" id="modal-import-btn" style="display:none" onclick="doImport()">インポート</button>
+    </div>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.module.js"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+
+// ============================================================
+// Lumber Catalog - actual dimensions in mm
+// ============================================================
+const LUMBER_CATALOG = [
+  { category: 'SPF材（1x）', items: [
+    { id: '1x2', name: '1x2', width: 19, height: 38, defaultLength: 1820, color: '#deb887' },
+    { id: '1x3', name: '1x3', width: 19, height: 63, defaultLength: 1820, color: '#deb887' },
+    { id: '1x4', name: '1x4', width: 19, height: 89, defaultLength: 1820, color: '#deb887' },
+    { id: '1x6', name: '1x6', width: 19, height: 140, defaultLength: 1820, color: '#d2b48c' },
+    { id: '1x8', name: '1x8', width: 19, height: 184, defaultLength: 1820, color: '#d2b48c' },
+    { id: '1x10', name: '1x10', width: 19, height: 235, defaultLength: 1820, color: '#d2b48c' },
+  ]},
+  { category: 'SPF材（2x）', items: [
+    { id: '2x2', name: '2x2', width: 38, height: 38, defaultLength: 1820, color: '#c4956a' },
+    { id: '2x3', name: '2x3', width: 38, height: 63, defaultLength: 1820, color: '#c4956a' },
+    { id: '2x4', name: '2x4', width: 38, height: 89, defaultLength: 1820, color: '#c4956a' },
+    { id: '2x6', name: '2x6', width: 38, height: 140, defaultLength: 1820, color: '#b8860b' },
+    { id: '2x8', name: '2x8', width: 38, height: 184, defaultLength: 1820, color: '#b8860b' },
+    { id: '2x10', name: '2x10', width: 38, height: 235, defaultLength: 2438, color: '#b8860b' },
+  ]},
+  { category: '角材', items: [
+    { id: '30x30', name: '30x30角', width: 30, height: 30, defaultLength: 1820, color: '#a0522d' },
+    { id: '45x45', name: '45x45角', width: 45, height: 45, defaultLength: 1820, color: '#a0522d' },
+    { id: '90x90', name: '90x90角', width: 90, height: 90, defaultLength: 3000, color: '#8b4513' },
+  ]},
+  { category: '板材', items: [
+    { id: 'shelf180', name: '棚板 180x18', width: 18, height: 180, defaultLength: 900, color: '#deb887' },
+    { id: 'shelf250', name: '棚板 250x18', width: 18, height: 250, defaultLength: 900, color: '#deb887' },
+    { id: 'shelf300', name: '棚板 300x18', width: 18, height: 300, defaultLength: 900, color: '#deb887' },
+  ]},
+];
+
+// ============================================================
+// State
+// ============================================================
+let scene, camera, renderer, gridHelper, orbitEnabled = true;
+let parts = [];
+let selectedPart = null;
+let partCounter = 0;
+let currentMode = 'select'; // select, move, rotate
+let isDragging = false;
+let dragPlane = new THREE.Plane();
+let dragOffset = new THREE.Vector3();
+let mouse = new THREE.Vector2();
+let raycaster = new THREE.Raycaster();
+let transformStartPos = new THREE.Vector3();
+
+// Grid snapping
+const GRID_SNAP = 10; // mm
+
+// ============================================================
+// Three.js Setup
+// ============================================================
+function initThree() {
+  const canvas = document.getElementById('three-canvas');
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x1a1a2e);
+
+  // Camera
+  camera = new THREE.PerspectiveCamera(50, 1, 1, 50000);
+  camera.position.set(1500, 1200, 2000);
+  camera.lookAt(0, 300, 0);
+
+  // Renderer
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+  // Lights
+  const ambient = new THREE.AmbientLight(0xffffff, 0.5);
+  scene.add(ambient);
+
+  const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+  dirLight.position.set(2000, 3000, 1500);
+  dirLight.castShadow = true;
+  dirLight.shadow.mapSize.set(2048, 2048);
+  dirLight.shadow.camera.left = -3000;
+  dirLight.shadow.camera.right = 3000;
+  dirLight.shadow.camera.top = 3000;
+  dirLight.shadow.camera.bottom = -3000;
+  scene.add(dirLight);
+
+  const hemiLight = new THREE.HemisphereLight(0x87ceeb, 0x8b4513, 0.3);
+  scene.add(hemiLight);
+
+  // Grid
+  gridHelper = new THREE.GridHelper(4000, 40, 0x0f3460, 0x0a1e3d);
+  scene.add(gridHelper);
+
+  // Floor plane (invisible, for raycasting)
+  const floorGeo = new THREE.PlaneGeometry(10000, 10000);
+  const floorMat = new THREE.MeshBasicMaterial({ visible: false });
+  const floor = new THREE.Mesh(floorGeo, floorMat);
+  floor.rotation.x = -Math.PI / 2;
+  floor.name = 'floor';
+  scene.add(floor);
+
+  // Axes helper
+  const axesHelper = new THREE.AxesHelper(300);
+  scene.add(axesHelper);
+
+  resize();
+  window.addEventListener('resize', resize);
+}
+
+function resize() {
+  const vp = document.getElementById('viewport');
+  const w = vp.clientWidth;
+  const h = vp.clientHeight;
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w, h);
+}
+
+// ============================================================
+// Simple Orbit Controls (no external dependency)
+// ============================================================
+let orbitState = { rotating: false, panning: false, lastX: 0, lastY: 0, theta: 0.8, phi: 0.9, distance: 2800, target: new THREE.Vector3(0, 300, 0) };
+
+function initOrbitControls() {
+  const canvas = renderer.domElement;
+
+  canvas.addEventListener('mousedown', (e) => {
+    if (currentMode !== 'select' && selectedPart) {
+      // Check if clicking on a part for transform
+      updateMouse(e);
+      raycaster.setFromCamera(mouse, camera);
+      const meshes = parts.map(p => p.mesh);
+      const hits = raycaster.intersectObjects(meshes);
+      if (hits.length > 0 && hits[0].object === selectedPart.mesh) {
+        startDrag(e, hits[0]);
+        return;
+      }
+    }
+    // Raycast for selection on left click
+    if (e.button === 0 && currentMode === 'select') {
+      updateMouse(e);
+      raycaster.setFromCamera(mouse, camera);
+      const meshes = parts.map(p => p.mesh);
+      const hits = raycaster.intersectObjects(meshes);
+      if (hits.length > 0) {
+        const part = parts.find(p => p.mesh === hits[0].object);
+        if (part) selectPart(part);
+        return;
+      } else {
+        selectPart(null);
+      }
+    }
+
+    if (e.button === 0 || e.button === 1) {
+      if (e.button === 1 || e.shiftKey) { orbitState.panning = true; }
+      else { orbitState.rotating = true; }
+      orbitState.lastX = e.clientX;
+      orbitState.lastY = e.clientY;
+    } else if (e.button === 2) {
+      orbitState.panning = true;
+      orbitState.lastX = e.clientX;
+      orbitState.lastY = e.clientY;
+    }
+  });
+
+  canvas.addEventListener('mousemove', (e) => {
+    if (isDragging) { onDrag(e); return; }
+    const dx = e.clientX - orbitState.lastX;
+    const dy = e.clientY - orbitState.lastY;
+    if (orbitState.rotating) {
+      orbitState.theta -= dx * 0.005;
+      orbitState.phi = Math.max(0.1, Math.min(Math.PI - 0.1, orbitState.phi - dy * 0.005));
+      updateCameraFromOrbit();
+    } else if (orbitState.panning) {
+      const right = new THREE.Vector3();
+      const up = new THREE.Vector3();
+      camera.getWorldDirection(up);
+      right.crossVectors(up, camera.up).normalize();
+      up.copy(camera.up).normalize();
+      const panSpeed = orbitState.distance * 0.001;
+      orbitState.target.add(right.multiplyScalar(-dx * panSpeed));
+      orbitState.target.add(up.multiplyScalar(dy * panSpeed));
+      updateCameraFromOrbit();
+    }
+    orbitState.lastX = e.clientX;
+    orbitState.lastY = e.clientY;
+  });
+
+  canvas.addEventListener('mouseup', () => {
+    orbitState.rotating = false;
+    orbitState.panning = false;
+    if (isDragging) endDrag();
+  });
+
+  canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    orbitState.distance *= 1 + e.deltaY * 0.001;
+    orbitState.distance = Math.max(200, Math.min(15000, orbitState.distance));
+    updateCameraFromOrbit();
+  }, { passive: false });
+
+  canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+  // Initial camera from orbit state
+  orbitState.theta = Math.atan2(camera.position.x - orbitState.target.x, camera.position.z - orbitState.target.z);
+  orbitState.phi = Math.acos(Math.max(-1, Math.min(1, (camera.position.y - orbitState.target.y) / orbitState.distance)));
+  updateCameraFromOrbit();
+}
+
+function updateCameraFromOrbit() {
+  const x = orbitState.target.x + orbitState.distance * Math.sin(orbitState.phi) * Math.sin(orbitState.theta);
+  const y = orbitState.target.y + orbitState.distance * Math.cos(orbitState.phi);
+  const z = orbitState.target.z + orbitState.distance * Math.sin(orbitState.phi) * Math.cos(orbitState.theta);
+  camera.position.set(x, y, z);
+  camera.lookAt(orbitState.target);
+}
+
+// ============================================================
+// Drag / Transform
+// ============================================================
+function updateMouse(e) {
+  const rect = renderer.domElement.getBoundingClientRect();
+  mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+}
+
+function startDrag(e, hit) {
+  isDragging = true;
+  if (currentMode === 'move') {
+    // Drag on Y plane through the object
+    dragPlane.setFromNormalAndCoplanarPoint(
+      camera.getWorldDirection(new THREE.Vector3()).clone().setY(0).normalize().length() < 0.1
+        ? new THREE.Vector3(0, 0, 1)
+        : new THREE.Vector3(0, 1, 0),
+      selectedPart.mesh.position
+    );
+    raycaster.setFromCamera(mouse, camera);
+    const pt = new THREE.Vector3();
+    raycaster.ray.intersectPlane(dragPlane, pt);
+    dragOffset.copy(selectedPart.mesh.position).sub(pt);
+    transformStartPos.copy(selectedPart.mesh.position);
+  } else if (currentMode === 'rotate') {
+    transformStartPos.set(
+      selectedPart.mesh.rotation.x,
+      selectedPart.mesh.rotation.y,
+      selectedPart.mesh.rotation.z
+    );
+    orbitState.lastX = e.clientX;
+  }
+}
+
+function onDrag(e) {
+  if (!selectedPart) return;
+  updateMouse(e);
+  if (currentMode === 'move') {
+    raycaster.setFromCamera(mouse, camera);
+    const pt = new THREE.Vector3();
+    if (raycaster.ray.intersectPlane(dragPlane, pt)) {
+      pt.add(dragOffset);
+      // Snap to grid
+      pt.x = Math.round(pt.x / GRID_SNAP) * GRID_SNAP;
+      pt.y = Math.max(0, Math.round(pt.y / GRID_SNAP) * GRID_SNAP);
+      pt.z = Math.round(pt.z / GRID_SNAP) * GRID_SNAP;
+      selectedPart.mesh.position.copy(pt);
+      syncPartFromMesh(selectedPart);
+      updatePropertiesPanel();
+    }
+  } else if (currentMode === 'rotate') {
+    const dx = e.clientX - orbitState.lastX;
+    const angle = Math.round((dx * 0.5) / 15) * 15;
+    selectedPart.mesh.rotation.y = transformStartPos.y + THREE.MathUtils.degToRad(angle);
+    syncPartFromMesh(selectedPart);
+    updatePropertiesPanel();
+  }
+}
+
+function endDrag() {
+  isDragging = false;
+}
+
+function snapVal(v, snap) { return Math.round(v / snap) * snap; }
+
+// ============================================================
+// Part Management
+// ============================================================
+function findLumberDef(id) {
+  for (const cat of LUMBER_CATALOG) {
+    const item = cat.items.find(i => i.id === id);
+    if (item) return item;
+  }
+  return null;
+}
+
+function createPart(lumberId, opts = {}) {
+  const def = findLumberDef(lumberId);
+  if (!def) return null;
+
+  partCounter++;
+  const length = opts.length || def.defaultLength;
+  const color = opts.color || def.color;
+  const name = opts.name || `${def.name} #${partCounter}`;
+
+  // Create mesh - lumber lies along X axis, width=Z, height=Y
+  const geo = new THREE.BoxGeometry(length, def.height, def.width);
+  const mat = new THREE.MeshStandardMaterial({
+    color: new THREE.Color(color),
+    roughness: 0.7,
+    metalness: 0.0,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+
+  // Position at ground level by default
+  mesh.position.set(
+    opts.x || 0,
+    opts.y !== undefined ? opts.y : def.height / 2,
+    opts.z || 0
+  );
+  if (opts.rx !== undefined) mesh.rotation.x = THREE.MathUtils.degToRad(opts.rx);
+  if (opts.ry !== undefined) mesh.rotation.y = THREE.MathUtils.degToRad(opts.ry);
+  if (opts.rz !== undefined) mesh.rotation.z = THREE.MathUtils.degToRad(opts.rz);
+
+  // Add wood grain lines
+  addWoodGrain(mesh, length, def.height, def.width);
+
+  scene.add(mesh);
+
+  const part = {
+    id: partCounter,
+    name,
+    lumberId,
+    length,
+    width: def.width,
+    height: def.height,
+    color,
+    x: mesh.position.x,
+    y: mesh.position.y,
+    z: mesh.position.z,
+    rx: opts.rx || 0,
+    ry: opts.ry || 0,
+    rz: opts.rz || 0,
+    mesh,
+  };
+  parts.push(part);
+  updateStatusBar();
+  updatePartsList();
+  return part;
+}
+
+function addWoodGrain(mesh, length, height, width) {
+  // Simple edge lines for visual clarity
+  const edges = new THREE.EdgesGeometry(mesh.geometry);
+  const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000, opacity: 0.15, transparent: true }));
+  mesh.add(line);
+}
+
+function syncPartFromMesh(part) {
+  part.x = Math.round(part.mesh.position.x);
+  part.y = Math.round(part.mesh.position.y);
+  part.z = Math.round(part.mesh.position.z);
+  part.rx = Math.round(THREE.MathUtils.radToDeg(part.mesh.rotation.x));
+  part.ry = Math.round(THREE.MathUtils.radToDeg(part.mesh.rotation.y));
+  part.rz = Math.round(THREE.MathUtils.radToDeg(part.mesh.rotation.z));
+}
+
+function syncMeshFromPart(part) {
+  part.mesh.position.set(part.x, part.y, part.z);
+  part.mesh.rotation.set(
+    THREE.MathUtils.degToRad(part.rx),
+    THREE.MathUtils.degToRad(part.ry),
+    THREE.MathUtils.degToRad(part.rz)
+  );
+}
+
+function rebuildMesh(part) {
+  const def = findLumberDef(part.lumberId);
+  if (!def) return;
+  // Remove old mesh
+  scene.remove(part.mesh);
+  part.mesh.geometry.dispose();
+  part.mesh.material.dispose();
+
+  const geo = new THREE.BoxGeometry(part.length, def.height, def.width);
+  const mat = new THREE.MeshStandardMaterial({
+    color: new THREE.Color(part.color),
+    roughness: 0.7,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  addWoodGrain(mesh, part.length, def.height, def.width);
+
+  mesh.position.set(part.x, part.y, part.z);
+  mesh.rotation.set(
+    THREE.MathUtils.degToRad(part.rx),
+    THREE.MathUtils.degToRad(part.ry),
+    THREE.MathUtils.degToRad(part.rz)
+  );
+  scene.add(mesh);
+  part.mesh = mesh;
+  part.width = def.width;
+  part.height = def.height;
+
+  if (selectedPart === part) highlightPart(part);
+}
+
+function selectPart(part) {
+  // Unhighlight previous
+  if (selectedPart) unhighlightPart(selectedPart);
+  selectedPart = part;
+  if (part) highlightPart(part);
+  updatePropertiesPanel();
+  updatePartsList();
+}
+
+function highlightPart(part) {
+  part.mesh.material.emissive = new THREE.Color(0xe94560);
+  part.mesh.material.emissiveIntensity = 0.15;
+}
+
+function unhighlightPart(part) {
+  if (part && part.mesh) {
+    part.mesh.material.emissive = new THREE.Color(0x000000);
+    part.mesh.material.emissiveIntensity = 0;
+  }
+}
+
+window.deleteSelected = function() {
+  if (!selectedPart) return;
+  scene.remove(selectedPart.mesh);
+  selectedPart.mesh.geometry.dispose();
+  selectedPart.mesh.material.dispose();
+  parts = parts.filter(p => p !== selectedPart);
+  selectedPart = null;
+  updatePropertiesPanel();
+  updatePartsList();
+  updateStatusBar();
+};
+
+window.duplicateSelected = function() {
+  if (!selectedPart) return;
+  const p = selectedPart;
+  const newPart = createPart(p.lumberId, {
+    length: p.length,
+    color: p.color,
+    x: p.x + 100,
+    y: p.y,
+    z: p.z + 100,
+    rx: p.rx, ry: p.ry, rz: p.rz,
+  });
+  if (newPart) selectPart(newPart);
+};
+
+// ============================================================
+// UI
+// ============================================================
+function buildCatalog() {
+  const list = document.getElementById('catalog-list');
+  for (const cat of LUMBER_CATALOG) {
+    const sec = document.createElement('div');
+    sec.className = 'catalog-section';
+    sec.textContent = cat.category;
+    list.appendChild(sec);
+    for (const item of cat.items) {
+      const el = document.createElement('div');
+      el.className = 'catalog-item';
+      el.innerHTML = `<div class="name">${item.name}</div><div class="dims">${item.width}×${item.height}mm / L=${item.defaultLength}mm</div>`;
+      el.addEventListener('click', () => {
+        const part = createPart(item.id);
+        if (part) selectPart(part);
+      });
+      list.appendChild(el);
+    }
+  }
+}
+
+function buildTypeSelect() {
+  const sel = document.getElementById('prop-type');
+  sel.innerHTML = '';
+  for (const cat of LUMBER_CATALOG) {
+    const optgroup = document.createElement('optgroup');
+    optgroup.label = cat.category;
+    for (const item of cat.items) {
+      const opt = document.createElement('option');
+      opt.value = item.id;
+      opt.textContent = `${item.name} (${item.width}×${item.height}mm)`;
+      optgroup.appendChild(opt);
+    }
+    sel.appendChild(optgroup);
+  }
+}
+
+function updatePropertiesPanel() {
+  const noSel = document.getElementById('no-selection');
+  const editor = document.getElementById('prop-editor');
+  if (!selectedPart) {
+    noSel.style.display = 'block';
+    editor.style.display = 'none';
+    return;
+  }
+  noSel.style.display = 'none';
+  editor.style.display = 'block';
+
+  document.getElementById('prop-name').value = selectedPart.name;
+  document.getElementById('prop-type').value = selectedPart.lumberId;
+  document.getElementById('prop-length').value = selectedPart.length;
+  document.getElementById('prop-px').value = selectedPart.x;
+  document.getElementById('prop-py').value = selectedPart.y;
+  document.getElementById('prop-pz').value = selectedPart.z;
+  document.getElementById('prop-rx').value = selectedPart.rx;
+  document.getElementById('prop-ry').value = selectedPart.ry;
+  document.getElementById('prop-rz').value = selectedPart.rz;
+  document.getElementById('prop-color').value = selectedPart.color;
+}
+
+function bindPropertyInputs() {
+  const fields = ['prop-name','prop-type','prop-length','prop-px','prop-py','prop-pz','prop-rx','prop-ry','prop-rz','prop-color'];
+  for (const id of fields) {
+    document.getElementById(id).addEventListener('change', () => {
+      if (!selectedPart) return;
+      selectedPart.name = document.getElementById('prop-name').value;
+      const newType = document.getElementById('prop-type').value;
+      const typeChanged = newType !== selectedPart.lumberId;
+      selectedPart.lumberId = newType;
+      selectedPart.length = parseInt(document.getElementById('prop-length').value) || 100;
+      selectedPart.x = parseInt(document.getElementById('prop-px').value) || 0;
+      selectedPart.y = parseInt(document.getElementById('prop-py').value) || 0;
+      selectedPart.z = parseInt(document.getElementById('prop-pz').value) || 0;
+      selectedPart.rx = parseInt(document.getElementById('prop-rx').value) || 0;
+      selectedPart.ry = parseInt(document.getElementById('prop-ry').value) || 0;
+      selectedPart.rz = parseInt(document.getElementById('prop-rz').value) || 0;
+      selectedPart.color = document.getElementById('prop-color').value;
+
+      if (typeChanged || true) {
+        rebuildMesh(selectedPart);
+      } else {
+        selectedPart.mesh.material.color.set(selectedPart.color);
+        syncMeshFromPart(selectedPart);
+      }
+      updatePartsList();
+    });
+  }
+}
+
+function updatePartsList() {
+  const list = document.getElementById('parts-list');
+  list.innerHTML = '';
+  for (const part of parts) {
+    const el = document.createElement('div');
+    el.className = 'part-item' + (part === selectedPart ? ' selected' : '');
+    el.innerHTML = `<span>${part.name}</span><span style="color:#888;font-size:11px">${part.lumberId} L=${part.length}</span>`;
+    el.addEventListener('click', () => selectPart(part));
+    list.appendChild(el);
+  }
+}
+
+function updateStatusBar() {
+  document.getElementById('sb-count').textContent = `パーツ: ${parts.length}`;
+}
+
+// Toolbar
+document.querySelectorAll('.tb-btn[data-mode]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    currentMode = btn.dataset.mode;
+    document.querySelectorAll('.tb-btn[data-mode]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('sb-mode').textContent = `モード: ${
+      currentMode === 'select' ? '選択' : currentMode === 'move' ? '移動' : '回転'
+    }`;
+  });
+});
+
+// Keyboard shortcuts
+document.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+  if (e.key === 'v' || e.key === 'V') { document.querySelector('[data-mode="select"]').click(); }
+  if (e.key === 'g' || e.key === 'G') { document.querySelector('[data-mode="move"]').click(); }
+  if (e.key === 'r' || e.key === 'R') { document.querySelector('[data-mode="rotate"]').click(); }
+  if (e.key === 'Delete' || e.key === 'Backspace') { deleteSelected(); }
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'd' || e.key === 'D')) { e.preventDefault(); duplicateSelected(); }
+});
+
+// ============================================================
+// Export / Import
+// ============================================================
+function exportProject() {
+  return JSON.stringify({
+    version: 1,
+    name: 'Lumber Project',
+    created: new Date().toISOString(),
+    parts: parts.map(p => ({
+      name: p.name,
+      lumberId: p.lumberId,
+      length: p.length,
+      color: p.color,
+      position: { x: p.x, y: p.y, z: p.z },
+      rotation: { x: p.rx, y: p.ry, z: p.rz },
+    }))
+  }, null, 2);
+}
+
+function importProject(json) {
+  let data;
+  try { data = JSON.parse(json); } catch(e) { alert('無効なJSONです'); return; }
+  // Clear existing
+  for (const p of parts) {
+    scene.remove(p.mesh);
+    p.mesh.geometry.dispose();
+    p.mesh.material.dispose();
+  }
+  parts = [];
+  selectedPart = null;
+  partCounter = 0;
+
+  if (data.parts) {
+    for (const pd of data.parts) {
+      createPart(pd.lumberId, {
+        name: pd.name,
+        length: pd.length,
+        color: pd.color,
+        x: pd.position?.x || 0,
+        y: pd.position?.y || 0,
+        z: pd.position?.z || 0,
+        rx: pd.rotation?.x || 0,
+        ry: pd.rotation?.y || 0,
+        rz: pd.rotation?.z || 0,
+      });
+    }
+  }
+  updatePropertiesPanel();
+  updatePartsList();
+  updateStatusBar();
+}
+
+window.showExport = function() {
+  document.getElementById('modal-title').textContent = 'エクスポート (JSON)';
+  document.getElementById('modal-text').value = exportProject();
+  document.getElementById('modal-text').readOnly = true;
+  document.getElementById('modal-import-btn').style.display = 'none';
+  document.getElementById('modal-overlay').style.display = 'flex';
+};
+
+window.showImport = function() {
+  document.getElementById('modal-title').textContent = 'インポート (JSON)';
+  document.getElementById('modal-text').value = '';
+  document.getElementById('modal-text').readOnly = false;
+  document.getElementById('modal-import-btn').style.display = 'inline-block';
+  document.getElementById('modal-overlay').style.display = 'flex';
+};
+
+window.closeModal = function() {
+  document.getElementById('modal-overlay').style.display = 'none';
+};
+
+window.copyModalText = function() {
+  const ta = document.getElementById('modal-text');
+  ta.select();
+  navigator.clipboard.writeText(ta.value).then(() => {
+    // Brief visual feedback
+    const btn = document.querySelector('.modal-btns .btn');
+    btn.textContent = 'コピー完了!';
+    setTimeout(() => btn.textContent = 'コピー', 1000);
+  });
+};
+
+window.doImport = function() {
+  const json = document.getElementById('modal-text').value;
+  if (json.trim()) {
+    importProject(json);
+    closeModal();
+  }
+};
+
+window.resetCamera = function() {
+  orbitState.theta = 0.8;
+  orbitState.phi = 0.9;
+  orbitState.distance = 2800;
+  orbitState.target.set(0, 300, 0);
+  updateCameraFromOrbit();
+};
+
+// ============================================================
+// Animation Loop
+// ============================================================
+function animate() {
+  requestAnimationFrame(animate);
+  renderer.render(scene, camera);
+}
+
+// ============================================================
+// Init
+// ============================================================
+initThree();
+initOrbitControls();
+buildCatalog();
+buildTypeSelect();
+bindPropertyInputs();
+animate();
+
+</script>
+</body>
+</html>
