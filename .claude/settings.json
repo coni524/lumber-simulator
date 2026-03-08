@@ -1,0 +1,33 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/check-lumber-ids.sh",
+            "statusMessage": "Checking lumber ID uniqueness..."
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/check-imports.sh",
+            "statusMessage": "Checking JS import conventions..."
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/pre-commit-check.sh",
+            "statusMessage": "Checking core files before commit..."
+          }
+        ]
+      }
+    ]
+  }
+}
