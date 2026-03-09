@@ -105,6 +105,12 @@ export function onDrag(e) {
       }
       pt.y = Math.max(-bottomOffset, pt.y);
 
+      // Ground snap: if bottom is near Y=0, snap exactly to ground
+      const currentBottomY = pt.y + bottomOffset;
+      if (currentBottomY >= 0 && currentBottomY < GRID_SNAP) {
+        pt.y = -bottomOffset;
+      }
+
       // Build exclude list for multi-part drag
       const otherParts = (state._dragPartOffsets || []).map(o => o.part);
       const allMoving = [state.selectedPart, ...otherParts];
@@ -321,9 +327,9 @@ function onStretchDrag(e) {
   const prevX = part.x, prevY = part.y, prevZ = part.z;
 
   part.length = newLength;
-  part.x = Math.round(newCenter.x);
-  part.y = Math.round(newCenter.y);
-  part.z = Math.round(newCenter.z);
+  part.x = Math.round(newCenter.x * 2) / 2;
+  part.y = Math.round(newCenter.y * 2) / 2;
+  part.z = Math.round(newCenter.z * 2) / 2;
   rebuildMesh(part);
 
   // Check collision

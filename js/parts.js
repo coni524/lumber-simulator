@@ -164,9 +164,9 @@ export function createPart(lumberId, opts = {}) {
 }
 
 export function syncPartFromMesh(part) {
-  part.x = Math.round(part.mesh.position.x);
-  part.y = Math.round(part.mesh.position.y);
-  part.z = Math.round(part.mesh.position.z);
+  part.x = Math.round(part.mesh.position.x * 2) / 2;
+  part.y = Math.round(part.mesh.position.y * 2) / 2;
+  part.z = Math.round(part.mesh.position.z * 2) / 2;
   part.rx = Math.round(THREE.MathUtils.radToDeg(part.mesh.rotation.x));
   part.ry = Math.round(THREE.MathUtils.radToDeg(part.mesh.rotation.y));
   part.rz = Math.round(THREE.MathUtils.radToDeg(part.mesh.rotation.z));
