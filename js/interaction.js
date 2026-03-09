@@ -1,10 +1,10 @@
 import * as THREE from 'three';
-import { state, GRID_SNAP } from './state.js';
+import { state, GRID_SNAP, SNAP_THRESHOLD } from './state.js';
 import {
   selectPart, togglePartSelection, createPart, checkCollision, syncPartFromMesh,
   updatePropertiesPanel, updatePartsList, updateStatusBar, updateGroupsList,
   snapToAdjacentParts, removePartFromGroups, highlightPart,
-  createGroupFromSelection
+  createGroupFromSelection, rebuildMesh, getPartFaces
 } from './parts.js';
 import { showDimensions, removeDimensions } from './dimensions.js';
 import { setSceneCallbacks } from './scene.js';
@@ -67,6 +67,10 @@ export function startDrag(e, hit) {
 export function onDrag(e) {
   if (!state.selectedPart) return;
   updateMouse(e);
+  if (state._selectDragMode === 'stretch') {
+    onStretchDrag(e);
+    return;
+  }
   if (state.currentMode === 'move' || state._selectDragMode === 'move') {
     // Dynamically switch vertical drag mode when Shift is pressed/released mid-drag
     if (e.shiftKey !== state._verticalDrag) {
@@ -214,12 +218,132 @@ export function onDrag(e) {
   }
 }
 
+// ── Stretch (Cmd+click drag) ──
+
+export function startStretch(e, part, hit) {
+  updateMouse(e);
+  state.isDragging = true;
+  state._selectDragMode = 'stretch';
+
+  // Determine which end was clicked: project hit point into local X axis
+  const localHit = hit.point.clone().sub(part.mesh.position);
+  const localAxis = new THREE.Vector3(1, 0, 0).applyQuaternion(part.mesh.quaternion);
+  const projOnAxis = localHit.dot(localAxis);
+
+  // stretchSign: +1 means dragging the +X end, -1 means dragging the -X end
+  state._stretchSign = projOnAxis >= 0 ? 1 : -1;
+  state._stretchPart = part;
+  state._stretchOrigLength = part.length;
+  state._stretchOrigPos = part.mesh.position.clone();
+  state._stretchAxis = localAxis.clone(); // world-space axis direction
+
+  // Set up drag plane perpendicular to camera but containing the part's axis
+  const camDir = state.camera.getWorldDirection(new THREE.Vector3());
+  // Use a plane that contains the axis and faces the camera
+  const planeNormal = new THREE.Vector3().crossVectors(localAxis, camDir);
+  planeNormal.crossVectors(planeNormal, localAxis).normalize();
+  if (planeNormal.lengthSq() < 0.01) planeNormal.set(0, 1, 0);
+  state.dragPlane.setFromNormalAndCoplanarPoint(planeNormal, part.mesh.position);
+
+  // Record the initial intersection point on the drag plane
+  state.raycaster.setFromCamera(state.mouse, state.camera);
+  const pt = new THREE.Vector3();
+  state.raycaster.ray.intersectPlane(state.dragPlane, pt);
+  state._stretchStartProj = pt.dot(state._stretchAxis);
+}
+
+function onStretchDrag(e) {
+  const part = state._stretchPart;
+  if (!part) return;
+
+  updateMouse(e);
+  state.raycaster.setFromCamera(state.mouse, state.camera);
+  const pt = new THREE.Vector3();
+  if (!state.raycaster.ray.intersectPlane(state.dragPlane, pt)) return;
+
+  const currentProj = pt.dot(state._stretchAxis);
+  const delta = (currentProj - state._stretchStartProj) * state._stretchSign;
+
+  // New length snapped to grid
+  let newLength = Math.round((state._stretchOrigLength + delta) / GRID_SNAP) * GRID_SNAP;
+  newLength = Math.max(GRID_SNAP, newLength); // minimum length
+
+  // Compute the new center position: the fixed end stays in place
+  // Fixed end is at origPos - stretchSign * (origLength/2) * axis
+  // New center = fixedEnd + stretchSign * (newLength/2) * axis
+  const fixedEnd = state._stretchOrigPos.clone().add(
+    state._stretchAxis.clone().multiplyScalar(-state._stretchSign * state._stretchOrigLength / 2)
+  );
+  const newCenter = fixedEnd.clone().add(
+    state._stretchAxis.clone().multiplyScalar(state._stretchSign * newLength / 2)
+  );
+
+  // Snap the stretching endpoint to other parts' faces
+  if (state.partSnapEnabled) {
+    const stretchEnd = fixedEnd.clone().add(
+      state._stretchAxis.clone().multiplyScalar(state._stretchSign * newLength)
+    );
+    const endNormal = state._stretchAxis.clone().multiplyScalar(state._stretchSign);
+
+    let bestSnap = null;
+    let bestDist = SNAP_THRESHOLD;
+
+    for (const other of state.parts) {
+      if (other === part) continue;
+      const otherFaces = getPartFaces(other, other.mesh.position);
+      for (const face of otherFaces) {
+        const dot = endNormal.dot(face.normal);
+        if (dot < -0.95) {
+          // Anti-parallel: snap stretch end to this face
+          const gap = face.center.clone().sub(stretchEnd).dot(endNormal);
+          const absGap = Math.abs(gap);
+          if (absGap < bestDist) {
+            bestDist = absGap;
+            bestSnap = gap;
+          }
+        }
+      }
+    }
+
+    if (bestSnap !== null) {
+      // Adjust length by the snap amount
+      const snapDelta = bestSnap * state._stretchSign;
+      newLength = newLength + Math.round(snapDelta / 1) * 1; // precise snap
+      newLength = Math.max(GRID_SNAP, newLength);
+      newCenter.copy(fixedEnd).add(
+        state._stretchAxis.clone().multiplyScalar(state._stretchSign * newLength / 2)
+      );
+    }
+  }
+
+  // Apply changes
+  const prevLength = part.length;
+  const prevX = part.x, prevY = part.y, prevZ = part.z;
+
+  part.length = newLength;
+  part.x = Math.round(newCenter.x);
+  part.y = Math.round(newCenter.y);
+  part.z = Math.round(newCenter.z);
+  rebuildMesh(part);
+
+  // Check collision
+  if (checkCollision(part)) {
+    part.length = prevLength;
+    part.x = prevX; part.y = prevY; part.z = prevZ;
+    rebuildMesh(part);
+  } else {
+    updatePropertiesPanel();
+  }
+  showDimensions(part);
+}
+
 export function endDrag() {
   state.isDragging = false;
   state._selectDragMode = null;
   state._verticalDrag = false;
   state._dragPartOffsets = [];
   state._faceRotateParts = [];
+  state._stretchPart = null;
 }
 
 export function deleteSelected() {
@@ -374,6 +498,7 @@ export function initInteraction() {
     onDrag,
     endDrag,
     updateMouseCb: updateMouse,
+    startStretchCb: startStretch,
   });
 
   // Expose to window for onclick handlers in HTML

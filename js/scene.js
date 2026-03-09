@@ -98,6 +98,12 @@ export function initOrbitControls() {
       if (hits.length > 0) {
         const part = state.parts.find(p => p.mesh === hits[0].object);
         if (part) {
+          if (e.metaKey || e.ctrlKey) {
+            // Cmd+click (Mac) / Ctrl+click: start length stretch
+            selectPartFn(part);
+            startStretchFn(e, part, hits[0]);
+            return;
+          }
           if (e.shiftKey) {
             // Shift+click on part: defer multi-select vs pan
             state._pendingMultiSelect = { part, hit: hits[0], startX: e.clientX, startY: e.clientY };
@@ -287,12 +293,14 @@ let startDrag = () => {};
 let onDragFn = () => {};
 let endDragFn = () => {};
 let updateMouse = () => {};
+let startStretchFn = () => {};
 
-export function setSceneCallbacks({ selectPart, togglePartSelection, startDragCb, onDrag, endDrag, updateMouseCb }) {
+export function setSceneCallbacks({ selectPart, togglePartSelection, startDragCb, onDrag, endDrag, updateMouseCb, startStretchCb }) {
   selectPartFn = selectPart;
   togglePartSelectionFn = togglePartSelection;
   startDrag = startDragCb;
   onDragFn = onDrag;
   endDragFn = endDrag;
   updateMouse = updateMouseCb;
+  if (startStretchCb) startStretchFn = startStretchCb;
 }
